@@ -1,0 +1,175 @@
+version: '3.2'
+
+services:
+  config-service:
+    image: 192.168.0.106:5000/surjo/cloud-config:latest
+    ports:
+      - "8888:8888"
+    networks:
+     - partner-net
+    volumes:
+      - /srv/prod/config:/config
+    environment:
+      - SPRING_PROFILES_ACTIVE=native
+
+  traefik:
+    image: 192.168.0.106:5000/surjo/traefik:latest
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.file.watch=true"
+      - "--providers.docker.constraints=Label(`dsell3.com`,`prod`)"
+      - "--providers.file.directory=/srv/prod/certs/"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    networks:
+     - partner-net
+    volumes:
+      - /srv/prod/traefik/traefik.yml:/opt/traefik/traefik.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/prod/certs/:/srv/prod/certs/
+
+
+  profile-web:
+    image: 192.168.0.106:5000/surjo/partner-profile-web:P3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.profile-web-http.loadbalancer.server.port=80"
+      - "traefik.http.routers.profile-web-http.rule=PathPrefix(`/profile`)"
+      - "traefik.http.routers.profile-web-http.entrypoints=web"
+      - "traefik.http.routers.profile-web-http.middlewares=profile-web-https"
+      - "traefik.http.routers.profile-web.entrypoints=websecure"
+      - "traefik.http.routers.profile-web.tls=true"
+      - "traefik.http.routers.profile-web.rule=PathPrefix(`/profile`)"
+      - "traefik.http.middlewares.profile-web-https.redirectscheme.scheme=https"
+      - "dsell3.com=prod"
+    deploy:
+      replicas: 1
+    networks:
+     - partner-net
+
+  admin-web:
+    image: 192.168.0.106:5000/surjo/partner-admin-web:P4
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.admin-web-http.loadbalancer.server.port=80"
+      - "traefik.http.routers.admin-web-http.rule=PathPrefix(`/admin-web`)"
+      - "traefik.http.routers.admin-web-http.entrypoints=web"
+      - "traefik.http.routers.admin-web-http.middlewares=admin-web-https"
+      - "traefik.http.routers.admin-web.entrypoints=websecure"
+      - "traefik.http.routers.admin-web.tls=true"
+      - "traefik.http.routers.admin-web.rule=PathPrefix(`/admin-web`)"
+      - "traefik.http.middlewares.admin-web-https.redirectscheme.scheme=https"
+      - "dsell3.com=prod"
+    deploy:
+      replicas: 1
+    networks:
+     - partner-net
+
+  partner-web:
+    image: 192.168.0.106:5000/surjo/partner-web:P3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.partner-web-http.loadbalancer.server.port=80"
+      - "traefik.http.routers.partner-web-http.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.partner-web-http.entrypoints=web"
+      - "traefik.http.routers.partner-web-http.middlewares=partner-web-https"
+      - "traefik.http.routers.partner-web.entrypoints=websecure"
+      - "traefik.http.routers.partner-web.tls=true"
+      - "traefik.http.routers.partner-web.rule=PathPrefix(`/`)"
+      - "traefik.http.middlewares.partner-web-https.redirectscheme.scheme=https"
+      - "dsell3.com=prod"
+    deploy:
+      replicas: 1
+    networks:
+     - partner-net
+
+
+  oauth:
+    image: 192.168.0.106:5000/surjo/oauth-service:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.oauth-http.loadbalancer.server.port=8080"
+      - "traefik.http.routers.oauth-http.rule=PathPrefix(`/oauth`)"
+      - "traefik.http.routers.oauth-http.entrypoints=web"
+      - "traefik.http.routers.oauth-http.middlewares=oauth-https"
+      - "traefik.http.routers.oauth.entrypoints=websecure"
+      - "traefik.http.routers.oauth.tls=true"
+      - "traefik.http.routers.oauth.rule=PathPrefix(`/oauth`)"
+      - "traefik.http.middlewares.oauth-https.redirectscheme.scheme=https"
+      - "dsell3.com=prod"
+    deploy:
+      replicas: 1
+    networks:
+     - partner-net
+    environment:
+     - CONFIG_SERVER_URI=http://config-service:8888
+     - CONFIG_PROFILES=net
+
+  admin:
+    image: 192.168.0.106:5000/surjo/admin-service:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.admin-http.loadbalancer.server.port=8080"
+      - "traefik.http.routers.admin-http.rule=PathPrefix(`/admin`)"
+      - "traefik.http.routers.admin-http.entrypoints=web"
+      - "traefik.http.routers.admin-http.middlewares=admin-https"
+      - "traefik.http.routers.admin.entrypoints=websecure"
+      - "traefik.http.routers.admin.tls=true"
+      - "traefik.http.routers.admin.rule=PathPrefix(`/admin`)"
+      - "traefik.http.middlewares.admin-https.redirectscheme.scheme=https"
+      - "dsell3.com=prod"
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 1024M
+    networks:
+     - partner-net
+    environment:
+     - CONFIG_SERVER_URI=http://config-service:8888
+     - CONFIG_PROFILES=dev
+
+  partner:
+    image: 192.168.0.106:5000/surjo/partner-service:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.partner-http.loadbalancer.server.port=8080"
+      - "traefik.http.routers.partner-http.rule=PathPrefix(`/partner`)"
+      - "traefik.http.routers.partner-http.entrypoints=web"
+      - "traefik.http.routers.partner-http.middlewares=partner-https"
+      - "traefik.http.routers.partner.entrypoints=websecure"
+      - "traefik.http.routers.partner.tls=true"
+      - "traefik.http.routers.partner.rule=PathPrefix(`/partner`)"
+      - "traefik.http.middlewares.partner-https.redirectscheme.scheme=https"
+      - "dsell3.com=prod"
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 1550M
+    networks:
+     - partner-net
+    environment:
+     - CONFIG_SERVER_URI=http://config-service:8888
+     - CONFIG_PROFILES=dev
+
+
+
+networks:
+ partner-net:
+   external: true
